@@ -4,21 +4,31 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PrivateFormat, NoEncryption
 
 
-def get_connection():
-    key_path = os.getenv("SF_PRIVATE_KEY_PATH")
-    if not key_path or not os.path.exists(key_path):
-        raise FileNotFoundError(f"Snowflake private key not found: {key_path}")
-    with open(key_path, "rb") as f:
-        private_key = load_pem_private_key(f.read(), password=None, backend=default_backend())
-    private_key_bytes = private_key.private_bytes(
+def _load_private_key() -> bytes:
+    # Prefer inline key content from env var (for cloud deployment)
+    key_content = os.getenv("SF_PRIVATE_KEY_CONTENT")
+    if key_content:
+        pem = key_content.encode()
+    else:
+        key_path = os.getenv("SF_PRIVATE_KEY_PATH")
+        if not key_path or not os.path.exists(key_path):
+            raise FileNotFoundError(f"Snowflake private key not found: {key_path}")
+        with open(key_path, "rb") as f:
+            pem = f.read()
+
+    private_key = load_pem_private_key(pem, password=None, backend=default_backend())
+    return private_key.private_bytes(
         encoding=Encoding.DER,
         format=PrivateFormat.PKCS8,
         encryption_algorithm=NoEncryption(),
     )
+
+
+def get_connection():
     return snowflake.connector.connect(
         account=os.getenv("SF_ACCOUNT"),
         user=os.getenv("SF_USER"),
-        private_key=private_key_bytes,
+        private_key=_load_private_key(),
         database=os.getenv("SF_DATABASE"),
         schema=os.getenv("SF_SCHEMA"),
         warehouse=os.getenv("SF_WAREHOUSE"),

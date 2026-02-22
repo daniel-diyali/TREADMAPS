@@ -1,8 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
 python-dotenv
 google-generativeai
 snowflake-connector-python
 requests
 pydantic
-
+cryptography
+python-multipart

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: treadmaps-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: SF_ACCOUNT
+        sync: false
+      - key: SF_USER
+        sync: false
+      - key: SF_PRIVATE_KEY_CONTENT
+        sync: false
+      - key: SF_DATABASE
+        sync: false
+      - key: SF_SCHEMA
+        sync: false
+      - key: SF_WAREHOUSE
+        sync: false
