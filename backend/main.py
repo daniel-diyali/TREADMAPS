@@ -1,4 +1,7 @@
 import json
+import re
+from dotenv import load_dotenv
+load_dotenv()
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,8 +13,10 @@ from backend.ai.prompts import INTENT_PROMPT, EXPLAIN_PROMPT, VISION_PROMPT
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Startup
     print("TREADMAPS backend running")
     yield
+    # Shutdown
 
 app = FastAPI(lifespan=lifespan)
 
@@ -26,7 +31,7 @@ app.add_middleware(
 async def route(body: RouteRequest):
     default_weather = {"temperature": 35, "precipitation": 0, "wind_speed": 10}
     segments = optimize_route(SEGMENTS, default_weather, body.user_constraints, body.mode)
-    total_score = round(sum(s["_score"] for s in segments), 2)
+    total_score = round(sum(s.pop("_score") for s in segments), 2)
     route_summary = f"Route mode: {body.mode}, segments: {len(segments)}, total score: {total_score}"
     conditions = f"temperature: {default_weather['temperature']}, precipitation: {default_weather['precipitation']}, wind_speed: {default_weather['wind_speed']}"
     explanation = call_gemini(EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions))
@@ -40,14 +45,21 @@ async def route(body: RouteRequest):
 @app.post("/ai/parse-intent", response_model=IntentResponse)
 async def ai_parse_intent(body: IntentRequest):
     try:
-        prompt = INTENT_PROMPT.format(user_input=body.user_input)
+        prompt = INTENT_PROMPT.replace("{user_input}", body.user_input)
         result = call_gemini(prompt)
+        print("GEMINI RAW:", repr(result))
         result = result.strip()
-        if result.startswith("```"):
-            result = "\n".join(result.splitlines()[1:-1])
+        if "```" in result:
+            result = result.split("```")[1]
+            if result.startswith("json"):
+                result = result[4:]
+        match = re.search(r'\{.*\}', result, re.DOTALL)
+        if match:
+            result = match.group()
         parsed = json.loads(result)
         return IntentResponse(**parsed)
-    except Exception:
+    except Exception as e:
+        print("PARSE-INTENT ERROR:", e)
         return IntentResponse(fatigue=0.5, avoid_hills=False, prefer_covered=False, pace="normal")
 
 @app.post("/ai/analyze-image")
