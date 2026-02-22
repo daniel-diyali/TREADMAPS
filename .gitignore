@@ -1,31 +1,8 @@
-# Node modules
-node_modules/
-
-# Python
-__pycache__/
+_pycache_/
 *.pyc
-venv/
-
-# Environment variables
 .env
-
-# Build outputs
-dist/
-build/
-.next/
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Mac OS
+*.env
+.venv/
+venv/
+*.log
 .DS_Store
-
-# Python
-backend/venv/
-backend/__pycache__/
-
-# Next.js
-.next/
-out/
