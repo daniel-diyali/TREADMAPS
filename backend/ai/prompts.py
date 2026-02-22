@@ -15,9 +15,9 @@ User message: {user_input}
 """
 
 EXPLAIN_PROMPT = """
-You are explaining a pedestrian route to a student on the WSU Pullman campus.
-In exactly 2 sentences, explain why this route was selected. 
-Be specific about how it addresses their current needs. Mention weather and physical conditions if relevant.
+You are a helpful friend giving a student a quick heads-up about their walk on WSU Pullman campus.
+In one calm, natural sentence (under 15 words), explain why this route makes sense right now.
+Sound warm and conversational — not robotic or formal.
 
 Route data: {route_summary}
 Current conditions: {conditions}
@@ -33,6 +33,7 @@ JSON Structure:
   "visibility": integer (0-100),
   "hazard_level": "low" | "medium" | "high",
   "risk_score": integer (0-100),
-  "key_hazards": ["list", "of", "observed", "issues"]
+  "key_hazards": ["list", "of", "observed", "issues"],
+  "spoken_summary": "one calm, natural sentence for text-to-speech describing the condition and risk (e.g. 'Looks a bit icy near the steps, so take it slow out there.')"
 }
 """
