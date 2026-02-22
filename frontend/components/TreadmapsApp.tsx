@@ -5,7 +5,7 @@ import {
   GoogleMap,
   useJsApiLoader,
   Marker,
-  Polyline,
+  DirectionsRenderer,
 } from "@react-google-maps/api";
 
 import { RouteOption, BackendSegment, HazardResult } from "../lib/types";
@@ -25,6 +25,7 @@ export default function TreadmapsApp() {
   const [activeMode, setActiveMode] = useState("safe");
   const [activeRoute, setActiveRoute] = useState(ROUTE_OPTIONS[0].id);
   const [destination, setDestination] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [mapRef, setMapRef] = useState<google.maps.Map | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [tiredLevel, setTiredLevel] = useState(1);
@@ -59,6 +60,7 @@ export default function TreadmapsApp() {
 
   useEffect(() => {
     if (!destination) return;
+    setApiRoutes(null);
     setIsLoadingRoutes(true);
     fetch(`${API_URL}/route`, {
       method: "POST",
@@ -88,6 +90,14 @@ export default function TreadmapsApp() {
 
   const origin = userLocation || { lat: 46.7339, lng: -117.1745 };
 
+  useEffect(() => {
+    if (!isLoaded || !destination) { setDirections(null); return; }
+    const service = new google.maps.DirectionsService();
+    service.route(
+      { origin, destination: { lat: destination.lat, lng: destination.lng }, travelMode: google.maps.TravelMode.WALKING },
+      (result, status) => { if (status === "OK" && result) setDirections(result); else setDirections(null); }
+    );
+  }, [destination, isLoaded]);
 
   const onMapLoad = useCallback((map: google.maps.Map) => setMapRef(map), []);
 
@@ -125,6 +135,11 @@ export default function TreadmapsApp() {
 
   const displayRoutes = apiRoutes ?? ROUTE_OPTIONS;
   const selectedRoute = displayRoutes.find((r) => r.id === activeRoute) ?? displayRoutes[0];
+
+  const directionsOptions = {
+    suppressMarkers: true,
+    polylineOptions: { strokeColor: selectedRoute.color, strokeOpacity: 0.92, strokeWeight: 7 },
+  };
 
 
   return (
@@ -294,19 +309,8 @@ export default function TreadmapsApp() {
                   }}
                 />
               )}
-              {destination && (
-                <Polyline
-                  path={
-                    selectedRoute.path.length > 0
-                      ? selectedRoute.path.map((p) => new google.maps.LatLng(p.lat, p.lng))
-                      : [origin, { lat: destination.lat, lng: destination.lng }]
-                  }
-                  options={{
-                    strokeColor: selectedRoute.color,
-                    strokeOpacity: 0.92,
-                    strokeWeight: 7,
-                  }}
-                />
+              {directions && (
+                <DirectionsRenderer directions={directions} options={directionsOptions} />
               )}
             </GoogleMap>
           ) : (
