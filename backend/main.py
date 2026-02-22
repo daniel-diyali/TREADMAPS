@@ -3,7 +3,7 @@ import re
 from dotenv import load_dotenv
 load_dotenv()
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from backend.models.schemas import RouteRequest, RouteResponse, IntentRequest, IntentResponse, WeatherOverride
 from backend.routing.optimizer import optimize_route
@@ -31,27 +31,31 @@ app.add_middleware(
 
 @app.post("/route", response_model=RouteResponse)
 async def route(body: RouteRequest):
-    weather = get_weather()
-    _risk = weather_to_risk(weather)
-    segments = optimize_route(SEGMENTS, weather, body.user_constraints, body.mode)
-    total_score = round(sum(s.pop("_score") for s in segments), 2)
-    route_summary = f"Route mode: {body.mode}, segments: {len(segments)}, total score: {total_score}"
-    conditions = f"temperature: {weather['temperature']}, precipitation: {weather['precipitation']}, wind_speed: {weather['wind_speed']}"
-    explanation = call_gemini(EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions))
-    response = RouteResponse(
-        segments=segments,
-        score=total_score,
-        explanation=explanation,
-        weather_summary=f"{weather['description']}, {weather['temperature']}°F, wind {weather['wind_speed']} mph",
-    )
     try:
-        execute_query(
-            "INSERT INTO ROUTE_EVENTS (route_mode, score, temperature, precipitation, user_fatigue) VALUES (%s, %s, %s, %s, %s)",
-            (body.mode, total_score, weather["temperature"], weather["precipitation"], body.user_constraints.get("fatigue", 0.0)),
+        weather = get_weather()
+        _risk = weather_to_risk(weather)
+        segments = optimize_route(SEGMENTS, weather, body.user_constraints, body.mode)
+        total_score = round(sum(s.pop("_score") for s in segments), 2)
+        route_summary = f"Route mode: {body.mode}, segments: {len(segments)}, total score: {total_score}"
+        conditions = f"temperature: {weather['temperature']}, precipitation: {weather['precipitation']}, wind_speed: {weather['wind_speed']}"
+        explanation = call_gemini(EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions))
+        response = RouteResponse(
+            segments=segments,
+            score=total_score,
+            explanation=explanation,
+            weather_summary=f"{weather['description']}, {weather['temperature']}°F, wind {weather['wind_speed']} mph",
         )
+        try:
+            execute_query(
+                "INSERT INTO ROUTE_EVENTS (route_mode, score, temperature, precipitation, user_fatigue) VALUES (%s, %s, %s, %s, %s)",
+                (body.mode, total_score, weather["temperature"], weather["precipitation"], body.user_constraints.get("fatigue", 0.0)),
+            )
+        except Exception as e:
+            print("Snowflake log failed:", e)
+        return response
     except Exception as e:
-        print("Snowflake log failed:", e)
-    return response
+        print(f"Error in route: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/route"})
 
 @app.post("/ai/parse-intent", response_model=IntentResponse)
 async def ai_parse_intent(body: IntentRequest):
@@ -70,8 +74,8 @@ async def ai_parse_intent(body: IntentRequest):
         parsed = json.loads(result)
         return IntentResponse(**parsed)
     except Exception as e:
-        print("PARSE-INTENT ERROR:", e)
-        return IntentResponse(fatigue=0.5, avoid_hills=False, prefer_covered=False, pace="normal")
+        print(f"Error in ai_parse_intent: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/ai/parse-intent"})
 
 @app.post("/ai/analyze-image")
 async def ai_analyze_image(file: UploadFile = File(...)):
@@ -83,8 +87,9 @@ async def ai_analyze_image(file: UploadFile = File(...)):
         if result.startswith("```"):
             result = "\n".join(result.splitlines()[1:-1])
         return json.loads(result)
-    except Exception:
-        return {"risk_score": 50, "hazard_level": "medium", "slip_probability": 50, "visibility": 70, "key_hazards": ["unable to analyze"]}
+    except Exception as e:
+        print(f"Error in ai_analyze_image: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/ai/analyze-image"})
 
 @app.get("/ai/explain")
 async def ai_explain(route_summary: str, conditions: str):
@@ -92,19 +97,25 @@ async def ai_explain(route_summary: str, conditions: str):
         prompt = EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions)
         result = call_gemini(prompt)
         return {"explanation": result}
-    except Exception:
-        return {"explanation": "Route selected based on current conditions."}
+    except Exception as e:
+        print(f"Error in ai_explain: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/ai/explain"})
 
 @app.get("/weather/current")
 async def weather_current():
     try:
         return get_weather()
-    except Exception:
-        return {"temperature": 35.0, "wind_speed": 10.0, "precipitation": 0.0, "description": "unavailable"}
+    except Exception as e:
+        print(f"Error in weather_current: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/weather/current"})
 
 @app.post("/weather/override")
 async def weather_override(_body: WeatherOverride):
-    return {"status": "ok", "data": None}
+    try:
+        return {"status": "ok", "data": None}
+    except Exception as e:
+        print(f"Error in weather_override: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/weather/override"})
 
 @app.get("/analytics/dashboard")
 async def analytics_dashboard():
@@ -121,9 +132,25 @@ async def analytics_dashboard():
             "FROM ENVIRONMENTAL_RISK WHERE timestamp > DATEADD('hour', -24, CURRENT_TIMESTAMP())"
         )
         return {"mode_breakdown": mode_breakdown, "hourly_trend": hourly_trend, "environmental_summary": environmental_summary}
-    except Exception:
-        return {"mode_breakdown": [], "hourly_trend": [], "environmental_summary": []}
+    except Exception as e:
+        print(f"Error in analytics_dashboard: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/analytics/dashboard"})
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "data": None}
+    try:
+        gemini_result = call_gemini("ping")
+        gemini_status = "error" if gemini_result.startswith("ERROR") else "ok"
+
+        snowflake_result = execute_query("SELECT 1")
+        snowflake_status = "error" if snowflake_result == [] else "ok"
+
+        weather_result = get_weather()
+        weather_status = "degraded" if weather_result["description"] == "unavailable" else "ok"
+
+        services = {"gemini": gemini_status, "snowflake": snowflake_status, "weather": weather_status}
+        status = "healthy" if all(v == "ok" for v in services.values()) else "degraded"
+        return {"status": status, "services": services}
+    except Exception as e:
+        print(f"Error in health: {e}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "endpoint": "/health"})
