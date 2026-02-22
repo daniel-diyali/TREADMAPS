@@ -10,6 +10,7 @@ from backend.routing.optimizer import optimize_route
 from backend.routing.segments import SEGMENTS
 from backend.ai.gemini import call_gemini, call_gemini_vision
 from backend.ai.prompts import INTENT_PROMPT, EXPLAIN_PROMPT, VISION_PROMPT
+from backend.services.weather import get_weather, weather_to_risk
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -29,17 +30,18 @@ app.add_middleware(
 
 @app.post("/route", response_model=RouteResponse)
 async def route(body: RouteRequest):
-    default_weather = {"temperature": 35, "precipitation": 0, "wind_speed": 10}
-    segments = optimize_route(SEGMENTS, default_weather, body.user_constraints, body.mode)
+    weather = get_weather()
+    _risk = weather_to_risk(weather)
+    segments = optimize_route(SEGMENTS, weather, body.user_constraints, body.mode)
     total_score = round(sum(s.pop("_score") for s in segments), 2)
     route_summary = f"Route mode: {body.mode}, segments: {len(segments)}, total score: {total_score}"
-    conditions = f"temperature: {default_weather['temperature']}, precipitation: {default_weather['precipitation']}, wind_speed: {default_weather['wind_speed']}"
+    conditions = f"temperature: {weather['temperature']}, precipitation: {weather['precipitation']}, wind_speed: {weather['wind_speed']}"
     explanation = call_gemini(EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions))
     return RouteResponse(
         segments=segments,
         score=total_score,
         explanation=explanation,
-        weather_summary="Live weather coming soon",
+        weather_summary=f"{weather['description']}, {weather['temperature']}°F, wind {weather['wind_speed']} mph",
     )
 
 @app.post("/ai/parse-intent", response_model=IntentResponse)
@@ -86,7 +88,10 @@ async def ai_explain(route_summary: str, conditions: str):
 
 @app.get("/weather/current")
 async def weather_current():
-    return {"status": "ok", "data": None}
+    try:
+        return get_weather()
+    except Exception:
+        return {"temperature": 35.0, "wind_speed": 10.0, "precipitation": 0.0, "description": "unavailable"}
 
 @app.post("/weather/override")
 async def weather_override(_body: WeatherOverride):
