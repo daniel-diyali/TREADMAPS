@@ -11,6 +11,7 @@ from backend.routing.segments import SEGMENTS
 from backend.ai.gemini import call_gemini, call_gemini_vision
 from backend.ai.prompts import INTENT_PROMPT, EXPLAIN_PROMPT, VISION_PROMPT
 from backend.services.weather import get_weather, weather_to_risk
+from backend.database.snowflake import execute_query
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -37,12 +38,20 @@ async def route(body: RouteRequest):
     route_summary = f"Route mode: {body.mode}, segments: {len(segments)}, total score: {total_score}"
     conditions = f"temperature: {weather['temperature']}, precipitation: {weather['precipitation']}, wind_speed: {weather['wind_speed']}"
     explanation = call_gemini(EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions))
-    return RouteResponse(
+    response = RouteResponse(
         segments=segments,
         score=total_score,
         explanation=explanation,
         weather_summary=f"{weather['description']}, {weather['temperature']}°F, wind {weather['wind_speed']} mph",
     )
+    try:
+        execute_query(
+            "INSERT INTO ROUTE_EVENTS (route_mode, score, temperature, precipitation, user_fatigue) VALUES (%s, %s, %s, %s, %s)",
+            (body.mode, total_score, weather["temperature"], weather["precipitation"], body.user_constraints.get("fatigue", 0.0)),
+        )
+    except Exception as e:
+        print("Snowflake log failed:", e)
+    return response
 
 @app.post("/ai/parse-intent", response_model=IntentResponse)
 async def ai_parse_intent(body: IntentRequest):
@@ -99,7 +108,21 @@ async def weather_override(_body: WeatherOverride):
 
 @app.get("/analytics/dashboard")
 async def analytics_dashboard():
-    return {"status": "ok", "data": None}
+    try:
+        mode_breakdown = execute_query(
+            "SELECT route_mode, COUNT(*) as count FROM ROUTE_EVENTS GROUP BY route_mode"
+        )
+        hourly_trend = execute_query(
+            "SELECT DATE_TRUNC('hour', timestamp) as hour, ROUND(AVG(score), 3) as avg_score "
+            "FROM ROUTE_EVENTS GROUP BY hour ORDER BY hour DESC LIMIT 24"
+        )
+        environmental_summary = execute_query(
+            "SELECT ROUND(AVG(risk_score), 3) as avg_risk, ROUND(AVG(temperature), 1) as avg_temp "
+            "FROM ENVIRONMENTAL_RISK WHERE timestamp > DATEADD('hour', -24, CURRENT_TIMESTAMP())"
+        )
+        return {"mode_breakdown": mode_breakdown, "hourly_trend": hourly_trend, "environmental_summary": environmental_summary}
+    except Exception:
+        return {"mode_breakdown": [], "hourly_trend": [], "environmental_summary": []}
 
 @app.get("/health")
 async def health():
