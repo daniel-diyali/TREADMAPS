@@ -31,6 +31,8 @@ export const ROUTE_OPTIONS: RouteOption[] = [
     ],
     aiExplanation: "Keeps you mostly inside and away from stairs — good call in icy weather.",
     color: "#2070e8",
+    waypoints: [],
+    path: [],
   },
   {
     id: "fastest",
@@ -44,6 +46,8 @@ export const ROUTE_OPTIONS: RouteOption[] = [
     ],
     aiExplanation: "Gets you there quick, but watch the icy patches and open wind corridors.",
     color: "#f5a623",
+    waypoints: [],
+    path: [],
   },
   {
     id: "balanced",
@@ -57,6 +61,8 @@ export const ROUTE_OPTIONS: RouteOption[] = [
     ],
     aiExplanation: "A solid middle ground — decent coverage without the sketchy icy sections.",
     color: "#10b981",
+    waypoints: [],
+    path: [],
   },
 ];
 

@@ -29,12 +29,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def resolve_destination_key(destination: str) -> str:
+    d = destination.lower()
+    if any(k in d for k in ["cub", "compton", "compton union"]):
+        return "cub"
+    if any(k in d for k in ["northside", "northside cafe", "north side"]):
+        return "northside_cafe"
+    return ""
+
+
 @app.post("/route", response_model=RouteResponse)
 async def route(body: RouteRequest):
     try:
         weather = get_weather()
         _risk = weather_to_risk(weather)
-        segments = optimize_route(SEGMENTS, weather, body.user_constraints, body.mode)
+        destination_key = resolve_destination_key(body.destination)
+        segments = optimize_route(SEGMENTS, weather, body.user_constraints, body.mode, destination_key)
         total_score = round(sum(s.pop("_score") for s in segments), 2)
         route_summary = f"Route mode: {body.mode}, segments: {len(segments)}, total score: {total_score}"
         conditions = f"temperature: {weather['temperature']}, precipitation: {weather['precipitation']}, wind_speed: {weather['wind_speed']}"

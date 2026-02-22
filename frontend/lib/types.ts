@@ -6,6 +6,8 @@ export interface RouteOption {
   scores: { label: string; value: number; color: string }[];
   aiExplanation: string;
   color: string;
+  waypoints: { lat: number; lng: number }[];
+  path: { lat: number; lng: number }[];
 }
 
 export interface BackendSegment {
@@ -17,6 +19,8 @@ export interface BackendSegment {
   roof_coverage: number;
   surface: string;
   risk_score: number;
+  waypoints?: { lat: number; lng: number }[];
+  path?: { lat: number; lng: number }[];
 }
 
 export interface HazardResult {

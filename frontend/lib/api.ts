@@ -33,5 +33,7 @@ export function segmentToRouteOption(
     ],
     aiExplanation: explanation,
     color: ROUTE_COLORS[index] ?? "#2070e8",
+    waypoints: seg.waypoints ?? [],
+    path: seg.path ?? [],
   };
 }
