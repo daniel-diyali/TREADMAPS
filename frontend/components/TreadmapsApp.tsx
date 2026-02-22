@@ -294,9 +294,13 @@ export default function TreadmapsApp() {
                   }}
                 />
               )}
-              {selectedRoute.path.length > 0 && (
+              {destination && (
                 <Polyline
-                  path={selectedRoute.path}
+                  path={
+                    selectedRoute.path.length > 0
+                      ? selectedRoute.path.map((p) => new google.maps.LatLng(p.lat, p.lng))
+                      : [origin, { lat: destination.lat, lng: destination.lng }]
+                  }
                   options={{
                     strokeColor: selectedRoute.color,
                     strokeOpacity: 0.92,
