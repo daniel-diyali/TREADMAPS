@@ -1,9 +1,12 @@
+import json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from backend.models.schemas import RouteRequest, RouteResponse, IntentRequest, IntentResponse, WeatherOverride
 from backend.routing.optimizer import optimize_route
 from backend.routing.segments import SEGMENTS
+from backend.ai.gemini import call_gemini, call_gemini_vision
+from backend.ai.prompts import INTENT_PROMPT, EXPLAIN_PROMPT, VISION_PROMPT
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -24,24 +27,50 @@ async def route(body: RouteRequest):
     default_weather = {"temperature": 35, "precipitation": 0, "wind_speed": 10}
     segments = optimize_route(SEGMENTS, default_weather, body.user_constraints, body.mode)
     total_score = round(sum(s["_score"] for s in segments), 2)
+    route_summary = f"Route mode: {body.mode}, segments: {len(segments)}, total score: {total_score}"
+    conditions = f"temperature: {default_weather['temperature']}, precipitation: {default_weather['precipitation']}, wind_speed: {default_weather['wind_speed']}"
+    explanation = call_gemini(EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions))
     return RouteResponse(
         segments=segments,
         score=total_score,
-        explanation="AI explanation coming soon",
+        explanation=explanation,
         weather_summary="Live weather coming soon",
     )
 
 @app.post("/ai/parse-intent", response_model=IntentResponse)
-async def ai_parse_intent(_body: IntentRequest):
-    return {"status": "ok", "data": None}
+async def ai_parse_intent(body: IntentRequest):
+    try:
+        prompt = INTENT_PROMPT.format(user_input=body.user_input)
+        result = call_gemini(prompt)
+        result = result.strip()
+        if result.startswith("```"):
+            result = "\n".join(result.splitlines()[1:-1])
+        parsed = json.loads(result)
+        return IntentResponse(**parsed)
+    except Exception:
+        return IntentResponse(fatigue=0.5, avoid_hills=False, prefer_covered=False, pace="normal")
 
 @app.post("/ai/analyze-image")
-async def ai_analyze_image():
-    return {"status": "ok", "data": None}
+async def ai_analyze_image(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
+        mime_type = file.content_type
+        result = call_gemini_vision(VISION_PROMPT, image_bytes, mime_type)
+        result = result.strip()
+        if result.startswith("```"):
+            result = "\n".join(result.splitlines()[1:-1])
+        return json.loads(result)
+    except Exception:
+        return {"risk_score": 50, "hazard_level": "medium", "slip_probability": 50, "visibility": 70, "key_hazards": ["unable to analyze"]}
 
 @app.get("/ai/explain")
-async def ai_explain():
-    return {"status": "ok", "data": None}
+async def ai_explain(route_summary: str, conditions: str):
+    try:
+        prompt = EXPLAIN_PROMPT.format(route_summary=route_summary, conditions=conditions)
+        result = call_gemini(prompt)
+        return {"explanation": result}
+    except Exception:
+        return {"explanation": "Route selected based on current conditions."}
 
 @app.get("/weather/current")
 async def weather_current():
