@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.models.schemas import RouteRequest, RouteResponse, IntentRequest, IntentResponse, WeatherOverride
+from backend.routing.optimizer import optimize_route
+from backend.routing.segments import SEGMENTS
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -18,8 +20,16 @@ app.add_middleware(
 )
 
 @app.post("/route", response_model=RouteResponse)
-async def route(_body: RouteRequest):
-    return {"status": "ok", "data": None}
+async def route(body: RouteRequest):
+    default_weather = {"temperature": 35, "precipitation": 0, "wind_speed": 10}
+    segments = optimize_route(SEGMENTS, default_weather, body.user_constraints, body.mode)
+    total_score = round(sum(s["_score"] for s in segments), 2)
+    return RouteResponse(
+        segments=segments,
+        score=total_score,
+        explanation="AI explanation coming soon",
+        weather_summary="Live weather coming soon",
+    )
 
 @app.post("/ai/parse-intent", response_model=IntentResponse)
 async def ai_parse_intent(_body: IntentRequest):
